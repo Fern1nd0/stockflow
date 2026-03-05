@@ -233,20 +233,42 @@ function Estoque({ products, setProducts, setCash, loading }) {
 
 function Caixa({ cash, setCash, loading }) {
   const [modal, setModal] = useState(false);
+  const [editId, setEditId] = useState(null); // null = novo, string = editando
   const [filter, setFilter] = useState("todos");
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ type: "entrada", desc: "", value: "", date: today(), tag: "" });
   const [saving, setSaving] = useState(false);
+  const [collapsedDays, setCollapsedDays] = useState({});
 
   const total = cash.reduce((s, c) => c.type === "entrada" ? s + c.value : s - c.value, 0);
   const entradas = cash.filter(c => c.type === "entrada").reduce((s, c) => s + c.value, 0);
   const saidas = cash.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
 
+  const openNew = () => {
+    setEditId(null);
+    setForm({ type: "entrada", desc: "", value: "", date: today(), tag: "" });
+    setModal(true);
+  };
+
+  const openEdit = (c) => {
+    setEditId(c.id);
+    setForm({ type: c.type, desc: c.desc, value: String(c.value), date: c.date, tag: c.tag || "" });
+    setModal(true);
+  };
+
   const save = async () => {
     if (!form.desc || !form.value) return;
     setSaving(true);
-    const created = await api.addCashEntry({ ...form, id: uid(), value: +form.value });
-    setCash(cs => [created, ...cs]);
+    if (editId) {
+      // Editar existente
+      const updated = { ...cash.find(c => c.id === editId), ...form, value: +form.value };
+      await api.updateCashEntry(updated);
+      setCash(cs => cs.map(c => c.id === editId ? updated : c));
+    } else {
+      // Novo lançamento
+      const created = await api.addCashEntry({ ...form, id: uid(), value: +form.value });
+      setCash(cs => [created, ...cs]);
+    }
     setSaving(false);
     setModal(false);
   };
@@ -256,14 +278,29 @@ function Caixa({ cash, setCash, loading }) {
     setCash(cs => cs.filter(c => c.id !== id));
   };
 
+  const toggleDay = (day) => setCollapsedDays(d => ({ ...d, [day]: !d[day] }));
+
   const filtered = cash
     .filter(c => filter === "todos" || c.type === filter)
     .filter(c => c.desc.toLowerCase().includes(search.toLowerCase()) || (c.tag || "").toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  const TAGS = [...new Set(cash.map(c => c.tag).filter(Boolean))];
+  // Agrupar por dia
+  const grouped = filtered.reduce((acc, c) => {
+    const day = c.date;
+    if (!acc[day]) acc[day] = [];
+    acc[day].push(c);
+    return acc;
+  }, {});
+  const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
 
+  const TAGS = [...new Set(cash.map(c => c.tag).filter(Boolean))];
   const inputStyle = { background: "#1a1a28", border: "1px solid #2a2a40", color: "#e8e8f0", borderRadius: 8, padding: "9px 13px", fontSize: 14, outline: "none", width: "100%", fontFamily: "var(--font-body)" };
+
+  const fmtDayLabel = (dateStr) => {
+    const d = new Date(dateStr + "T12:00:00");
+    return d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -292,50 +329,77 @@ function Caixa({ cash, setCash, loading }) {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        <Btn onClick={() => { setForm({ type: "entrada", desc: "", value: "", date: today(), tag: "" }); setModal(true); }} color="#7c6af7">＋ Novo Lançamento</Btn>
+        <Btn onClick={openNew} color="#7c6af7">＋ Novo Lançamento</Btn>
       </div>
 
-      <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, overflow: "hidden" }}>
-        {loading ? (
-          <div style={{ padding: 60, textAlign: "center", color: "#6b6b8a" }}><Spinner /> Carregando...</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid #2a2a40" }}>
-                  {["Data", "Descrição", "Tag", "Tipo", "Valor", ""].map(h => (
-                    <th key={h} style={{ padding: "14px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b6b8a", textTransform: "uppercase", letterSpacing: ".07em" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c, i) => (
-                  <tr key={c.id} style={{ borderBottom: "1px solid #2a2a40", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,.02)" }}>
-                    <td style={{ padding: "13px 16px", fontFamily: "var(--font-mono)", fontSize: 13, color: "#6b6b8a" }}>{fmtDate(c.date)}</td>
-                    <td style={{ padding: "13px 16px", fontWeight: 500, color: "#e8e8f0" }}>{c.desc}</td>
-                    <td style={{ padding: "13px 16px" }}>{c.tag && <span style={{ background: "#1a1a28", border: "1px solid #2a2a40", borderRadius: 6, padding: "2px 8px", fontSize: 12, color: "#e8e8f0" }}>{c.tag}</span>}</td>
-                    <td style={{ padding: "13px 16px" }}>
-                      <span style={{ borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 600, ...(c.type === "entrada" ? { background: "rgba(74,222,128,.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,.25)" } : { background: "rgba(248,113,113,.12)", color: "#f87171", border: "1px solid rgba(248,113,113,.25)" }) }}>
-                        {c.type === "entrada" ? "📥 Entrada" : "📤 Saída"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "13px 16px", fontFamily: "var(--font-mono)", fontWeight: 600, color: c.type === "entrada" ? "#4ade80" : "#f87171" }}>
-                      {c.type === "entrada" ? "+" : "-"}{fmt(c.value)}
-                    </td>
-                    <td style={{ padding: "13px 16px" }}><Btn sm outline onClick={() => del(c.id)} color="#f87171">✕</Btn></td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: 40, textAlign: "center", color: "#6b6b8a" }}>Nenhum lançamento encontrado</td></tr>
+      {/* Lista agrupada por dia */}
+      {loading ? (
+        <div style={{ padding: 60, textAlign: "center", color: "#6b6b8a", background: "#13131c", borderRadius: 16, border: "1px solid #2a2a40" }}><Spinner /> Carregando...</div>
+      ) : days.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: "#6b6b8a", background: "#13131c", borderRadius: 16, border: "1px solid #2a2a40" }}>Nenhum lançamento encontrado</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {days.map(day => {
+            const items = grouped[day];
+            const dayEntradas = items.filter(c => c.type === "entrada").reduce((s, c) => s + c.value, 0);
+            const daySaidas = items.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
+            const daySaldo = dayEntradas - daySaidas;
+            const isCollapsed = collapsedDays[day];
+
+            return (
+              <div key={day} style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, overflow: "hidden" }}>
+                {/* Header do dia — clicável para colapsar */}
+                <div onClick={() => toggleDay(day)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", cursor: "pointer", borderBottom: isCollapsed ? "none" : "1px solid #2a2a40", background: "#1a1a28" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ fontSize: 16 }}>{isCollapsed ? "▶" : "▼"}</span>
+                    <div>
+                      <p style={{ fontWeight: 700, fontSize: 14, color: "#e8e8f0", textTransform: "capitalize" }}>{fmtDayLabel(day)}</p>
+                      <p style={{ fontSize: 12, color: "#6b6b8a", marginTop: 2 }}>{items.length} lançamento{items.length !== 1 ? "s" : ""}</p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+                    <span style={{ fontSize: 13, color: "#4ade80", fontFamily: "var(--font-mono)" }}>+{fmt(dayEntradas)}</span>
+                    <span style={{ fontSize: 13, color: "#f87171", fontFamily: "var(--font-mono)" }}>-{fmt(daySaidas)}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "var(--font-mono)", color: daySaldo >= 0 ? "#4ade80" : "#f87171", background: daySaldo >= 0 ? "rgba(74,222,128,.1)" : "rgba(248,113,113,.1)", border: `1px solid ${daySaldo >= 0 ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`, borderRadius: 8, padding: "4px 10px" }}>
+                      {daySaldo >= 0 ? "+" : ""}{fmt(daySaldo)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lançamentos do dia */}
+                {!isCollapsed && (
+                  <div>
+                    {items.map((c, i) => (
+                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: i < items.length - 1 ? "1px solid #2a2a40" : "none", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,.015)" }}>
+                        {/* Tipo badge */}
+                        <span style={{ borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", ...(c.type === "entrada" ? { background: "rgba(74,222,128,.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,.25)" } : { background: "rgba(248,113,113,.12)", color: "#f87171", border: "1px solid rgba(248,113,113,.25)" }) }}>
+                          {c.type === "entrada" ? "📥 Entrada" : "📤 Saída"}
+                        </span>
+                        {/* Descrição */}
+                        <span style={{ flex: 1, fontWeight: 500, color: "#e8e8f0", fontSize: 14 }}>{c.desc}</span>
+                        {/* Tag */}
+                        {c.tag && <span style={{ background: "#1a1a28", border: "1px solid #2a2a40", borderRadius: 6, padding: "2px 8px", fontSize: 12, color: "#6b6b8a", whiteSpace: "nowrap" }}>{c.tag}</span>}
+                        {/* Valor */}
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, color: c.type === "entrada" ? "#4ade80" : "#f87171", whiteSpace: "nowrap" }}>
+                          {c.type === "entrada" ? "+" : "-"}{fmt(c.value)}
+                        </span>
+                        {/* Ações */}
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <Btn sm outline onClick={() => openEdit(c)} color="#7c6af7">✏</Btn>
+                          <Btn sm outline onClick={() => del(c.id)} color="#f87171">✕</Btn>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {modal && (
-        <Modal title="Novo Lançamento" onClose={() => setModal(false)}>
+        <Modal title={editId ? "Editar Lançamento" : "Novo Lançamento"} onClose={() => setModal(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <Field label="Tipo">
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -357,7 +421,7 @@ function Caixa({ cash, setCash, loading }) {
             </Field>
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-            <Btn full onClick={save} color={form.type === "entrada" ? "#4ade80" : "#f87171"} disabled={saving}>{saving ? "Registrando…" : "Registrar"}</Btn>
+            <Btn full onClick={save} color={form.type === "entrada" ? "#4ade80" : "#f87171"} disabled={saving}>{saving ? "Salvando…" : editId ? "Salvar Alterações" : "Registrar"}</Btn>
             <Btn full outline onClick={() => setModal(false)} color="#6b6b8a">Cancelar</Btn>
           </div>
         </Modal>

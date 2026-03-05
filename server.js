@@ -77,3 +77,10 @@ app.get("*", (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ StockFlow rodando na porta ${PORT}`));
+
+app.put("/cash/:id", (req, res) => {
+  const db = readDB();
+  db.cash = db.cash.map(c => c.id === req.params.id ? req.body : c);
+  writeDB(db);
+  res.json(req.body);
+});
