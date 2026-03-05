@@ -531,6 +531,290 @@ function Dashboard({ products, cash, loading }) {
   );
 }
 
+function Relatorios({ cash, loading }) {
+  const today2 = new Date();
+  const firstOfMonth = new Date(today2.getFullYear(), today2.getMonth(), 1).toISOString().slice(0, 10);
+  const todayStr = today2.toISOString().slice(0, 10);
+
+  const [dateFrom, setDateFrom] = useState(firstOfMonth);
+  const [dateTo, setDateTo] = useState(todayStr);
+  const [periodo, setPeriodo] = useState("mes");
+
+  const inputStyle = { background: "#1a1a28", border: "1px solid #2a2a40", color: "#e8e8f0", borderRadius: 8, padding: "9px 13px", fontSize: 14, outline: "none", fontFamily: "var(--font-body)" };
+
+  const applyPeriodo = (p) => {
+    setPeriodo(p);
+    const now = new Date();
+    if (p === "hoje") {
+      const d = now.toISOString().slice(0, 10);
+      setDateFrom(d); setDateTo(d);
+    } else if (p === "semana") {
+      const day = now.getDay();
+      const monday = new Date(now); monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      setDateFrom(monday.toISOString().slice(0, 10));
+      setDateTo(now.toISOString().slice(0, 10));
+    } else if (p === "mes") {
+      setDateFrom(new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
+      setDateTo(now.toISOString().slice(0, 10));
+    } else if (p === "mes_ant") {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const last = new Date(now.getFullYear(), now.getMonth(), 0);
+      setDateFrom(first.toISOString().slice(0, 10));
+      setDateTo(last.toISOString().slice(0, 10));
+    } else if (p === "ano") {
+      setDateFrom(new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10));
+      setDateTo(now.toISOString().slice(0, 10));
+    }
+  };
+
+  // Filtra lançamentos no período
+  const filtered = cash.filter(c => c.date >= dateFrom && c.date <= dateTo);
+  const entradas = filtered.filter(c => c.type === "entrada");
+  const saidas = filtered.filter(c => c.type === "saida");
+  const totalEntradas = entradas.reduce((s, c) => s + c.value, 0);
+  const totalSaidas = saidas.reduce((s, c) => s + c.value, 0);
+  const lucro = totalEntradas - totalSaidas;
+  const margem = totalEntradas > 0 ? (lucro / totalEntradas * 100) : 0;
+
+  // Vendas por dia (para o gráfico de barras manual)
+  const byDay = {};
+  filtered.forEach(c => {
+    if (!byDay[c.date]) byDay[c.date] = { entradas: 0, saidas: 0 };
+    if (c.type === "entrada") byDay[c.date].entradas += c.value;
+    else byDay[c.date].saidas += c.value;
+  });
+  const days = Object.keys(byDay).sort();
+  const maxVal = Math.max(...days.map(d => byDay[d].entradas + byDay[d].saidas), 1);
+
+  // Tags/categorias de saída
+  const tagsSaida = {};
+  saidas.forEach(c => { tagsSaida[c.tag || "Outros"] = (tagsSaida[c.tag || "Outros"] || 0) + c.value; });
+
+  // Tags/categorias de entrada
+  const tagsEntrada = {};
+  entradas.forEach(c => { tagsEntrada[c.tag || "Outros"] = (tagsEntrada[c.tag || "Outros"] || 0) + c.value; });
+
+  // Maior dia de faturamento
+  const melhorDia = days.reduce((best, d) => byDay[d].entradas > (byDay[best]?.entradas || 0) ? d : best, days[0]);
+  const mediaEntradas = days.length > 0 ? totalEntradas / days.length : 0;
+
+  const PERIODOS = [
+    { id: "hoje", label: "Hoje" },
+    { id: "semana", label: "Esta semana" },
+    { id: "mes", label: "Este mês" },
+    { id: "mes_ant", label: "Mês anterior" },
+    { id: "ano", label: "Este ano" },
+    { id: "custom", label: "Personalizado" },
+  ];
+
+  const fmtDayShort = (d) => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* Seletor de período */}
+      <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 20 }}>
+        <p style={{ fontSize: 12, fontWeight: 700, color: "#6b6b8a", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 12 }}>Período de análise</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {PERIODOS.map(p => (
+            <button key={p.id} onClick={() => applyPeriodo(p.id)} style={{ background: periodo === p.id ? "#7c6af7" : "#1a1a28", color: periodo === p.id ? "#fff" : "#6b6b8a", border: "1px solid #2a2a40", borderRadius: 8, padding: "7px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "var(--font-body)" }}>
+              {p.label}
+            </button>
+          ))}
+          {periodo === "custom" && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 4 }}>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inputStyle, width: 150 }} />
+              <span style={{ color: "#6b6b8a" }}>até</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inputStyle, width: 150 }} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 60, textAlign: "center", color: "#6b6b8a", background: "#13131c", borderRadius: 16, border: "1px solid #2a2a40" }}><Spinner /> Carregando...</div>
+      ) : (
+        <>
+          {/* KPIs */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14 }}>
+            <KpiCard label="Receita" value={fmt(totalEntradas)} icon="📥" accent="#4ade80" sub={`${entradas.length} lançamentos`} />
+            <KpiCard label="Despesas" value={fmt(totalSaidas)} icon="📤" accent="#f87171" sub={`${saidas.length} lançamentos`} />
+            <KpiCard label="Lucro Líquido" value={fmt(lucro)} icon="💰" accent={lucro >= 0 ? "#4ade80" : "#f87171"} />
+            <KpiCard label="Margem" value={margem.toFixed(1) + "%"} icon="📊" accent="#7c6af7" />
+            <KpiCard label="Média por Dia" value={fmt(mediaEntradas)} icon="📅" accent="#fbbf24" sub={`${days.length} dias`} />
+            <KpiCard label="Melhor Dia" value={melhorDia ? fmt(byDay[melhorDia]?.entradas) : "—"} icon="🏆" accent="#f76a8a" sub={melhorDia ? fmtDayShort(melhorDia) : ""} />
+          </div>
+
+          {/* Gráfico de barras por dia */}
+          {days.length > 0 && (
+            <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 22 }}>
+              <h3 style={{ fontFamily: "var(--font-head)", fontSize: 15, color: "#e8e8f0", marginBottom: 20 }}>📊 Faturamento por Dia</h3>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 160, overflowX: "auto", paddingBottom: 8 }}>
+                {days.map(d => {
+                  const entPct = byDay[d].entradas / maxVal * 100;
+                  const saiPct = byDay[d].saidas / maxVal * 100;
+                  const isHover = d === melhorDia;
+                  return (
+                    <div key={d} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minWidth: 44, flex: "0 0 44px" }} title={`${fmtDayShort(d)}\nEntradas: ${fmt(byDay[d].entradas)}\nSaídas: ${fmt(byDay[d].saidas)}`}>
+                      <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 120 }}>
+                        <div style={{ width: 16, height: `${entPct}%`, minHeight: 4, background: isHover ? "#22c55e" : "#4ade80", borderRadius: "4px 4px 0 0", transition: "height .3s" }} />
+                        <div style={{ width: 16, height: `${saiPct}%`, minHeight: 4, background: "#f87171", borderRadius: "4px 4px 0 0", transition: "height .3s" }} />
+                      </div>
+                      <span style={{ fontSize: 10, color: "#6b6b8a", whiteSpace: "nowrap" }}>{fmtDayShort(d)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#6b6b8a" }}>
+                  <span style={{ width: 12, height: 12, background: "#4ade80", borderRadius: 3, display: "inline-block" }} /> Entradas
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#6b6b8a" }}>
+                  <span style={{ width: 12, height: 12, background: "#f87171", borderRadius: 3, display: "inline-block" }} /> Saídas
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {/* Entradas por categoria */}
+            <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 22 }}>
+              <h3 style={{ fontFamily: "var(--font-head)", fontSize: 15, color: "#e8e8f0", marginBottom: 16 }}>📥 Entradas por Categoria</h3>
+              {Object.keys(tagsEntrada).length === 0 ? (
+                <p style={{ color: "#6b6b8a", fontSize: 14 }}>Sem entradas no período</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {Object.entries(tagsEntrada).sort((a, b) => b[1] - a[1]).map(([tag, val], i) => {
+                    const pct = totalEntradas > 0 ? val / totalEntradas * 100 : 0;
+                    const colors = ["#4ade80", "#7c6af7", "#fbbf24", "#f76a8a", "#6b6b8a"];
+                    return (
+                      <div key={tag}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 500, color: "#e8e8f0" }}>{tag}</span>
+                          <span style={{ fontFamily: "var(--font-mono)", color: colors[i % colors.length] }}>{fmt(val)} ({pct.toFixed(0)}%)</span>
+                        </div>
+                        <div style={{ height: 6, background: "#1a1a28", borderRadius: 4 }}>
+                          <div style={{ height: "100%", width: `${pct}%`, background: colors[i % colors.length], borderRadius: 4 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Saídas por categoria */}
+            <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 22 }}>
+              <h3 style={{ fontFamily: "var(--font-head)", fontSize: 15, color: "#e8e8f0", marginBottom: 16 }}>📤 Saídas por Categoria</h3>
+              {Object.keys(tagsSaida).length === 0 ? (
+                <p style={{ color: "#6b6b8a", fontSize: 14 }}>Sem saídas no período</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {Object.entries(tagsSaida).sort((a, b) => b[1] - a[1]).map(([tag, val], i) => {
+                    const pct = totalSaidas > 0 ? val / totalSaidas * 100 : 0;
+                    const colors = ["#f87171", "#f76a8a", "#fbbf24", "#7c6af7", "#6b6b8a"];
+                    return (
+                      <div key={tag}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 500, color: "#e8e8f0" }}>{tag}</span>
+                          <span style={{ fontFamily: "var(--font-mono)", color: colors[i % colors.length] }}>{fmt(val)} ({pct.toFixed(0)}%)</span>
+                        </div>
+                        <div style={{ height: 6, background: "#1a1a28", borderRadius: 4 }}>
+                          <div style={{ height: "100%", width: `${pct}%`, background: colors[i % colors.length], borderRadius: 4 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Resumo do período */}
+            <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 22 }}>
+              <h3 style={{ fontFamily: "var(--font-head)", fontSize: 15, color: "#e8e8f0", marginBottom: 16 }}>📋 Resumo do Período</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {[
+                  { label: "Total de dias", value: days.length + " dias" },
+                  { label: "Lançamentos", value: filtered.length },
+                  { label: "Receita bruta", value: fmt(totalEntradas), color: "#4ade80" },
+                  { label: "Total despesas", value: fmt(totalSaidas), color: "#f87171" },
+                  { label: "Lucro líquido", value: fmt(lucro), color: lucro >= 0 ? "#4ade80" : "#f87171" },
+                  { label: "Margem de lucro", value: margem.toFixed(1) + "%", color: "#7c6af7" },
+                  { label: "Ticket médio/dia", value: fmt(mediaEntradas), color: "#fbbf24" },
+                ].map(row => (
+                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #2a2a40" }}>
+                    <span style={{ fontSize: 13, color: "#6b6b8a" }}>{row.label}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 14, color: row.color || "#e8e8f0" }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top lançamentos do período */}
+            <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 22 }}>
+              <h3 style={{ fontFamily: "var(--font-head)", fontSize: 15, color: "#e8e8f0", marginBottom: 16 }}>🏅 Maiores Entradas do Período</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {entradas.sort((a, b) => b.value - a.value).slice(0, 6).map((c, i) => (
+                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #2a2a40" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#6b6b8a", minWidth: 20 }}>#{i + 1}</span>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 500, color: "#e8e8f0" }}>{c.desc}</p>
+                        <p style={{ fontSize: 11, color: "#6b6b8a" }}>{fmtDate(c.date)}{c.tag ? ` · ${c.tag}` : ""}</p>
+                      </div>
+                    </div>
+                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "#4ade80", whiteSpace: "nowrap" }}>+{fmt(c.value)}</span>
+                  </div>
+                ))}
+                {entradas.length === 0 && <p style={{ color: "#6b6b8a", fontSize: 14 }}>Sem entradas no período</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* Tabela detalhada */}
+          <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, overflow: "hidden" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #2a2a40", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ fontFamily: "var(--font-head)", fontSize: 15, color: "#e8e8f0" }}>📄 Todos os Lançamentos do Período</h3>
+              <span style={{ fontSize: 12, color: "#6b6b8a", fontFamily: "var(--font-mono)" }}>{filtered.length} registros</span>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #2a2a40" }}>
+                    {["Data", "Descrição", "Categoria", "Tipo", "Valor"].map(h => (
+                      <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b6b8a", textTransform: "uppercase", letterSpacing: ".07em" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.sort((a, b) => new Date(b.date) - new Date(a.date)).map((c, i) => (
+                    <tr key={c.id} style={{ borderBottom: "1px solid #2a2a40", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,.015)" }}>
+                      <td style={{ padding: "11px 16px", fontFamily: "var(--font-mono)", fontSize: 13, color: "#6b6b8a", whiteSpace: "nowrap" }}>{fmtDate(c.date)}</td>
+                      <td style={{ padding: "11px 16px", fontSize: 13, fontWeight: 500, color: "#e8e8f0" }}>{c.desc}</td>
+                      <td style={{ padding: "11px 16px" }}>{c.tag && <span style={{ background: "#1a1a28", border: "1px solid #2a2a40", borderRadius: 6, padding: "2px 8px", fontSize: 12, color: "#6b6b8a" }}>{c.tag}</span>}</td>
+                      <td style={{ padding: "11px 16px" }}>
+                        <span style={{ borderRadius: 6, padding: "2px 8px", fontSize: 12, fontWeight: 600, ...(c.type === "entrada" ? { background: "rgba(74,222,128,.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,.25)" } : { background: "rgba(248,113,113,.12)", color: "#f87171", border: "1px solid rgba(248,113,113,.25)" }) }}>
+                          {c.type === "entrada" ? "Entrada" : "Saída"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "11px 16px", fontFamily: "var(--font-mono)", fontWeight: 700, color: c.type === "entrada" ? "#4ade80" : "#f87171", whiteSpace: "nowrap" }}>
+                        {c.type === "entrada" ? "+" : "-"}{fmt(c.value)}
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={5} style={{ padding: 40, textAlign: "center", color: "#6b6b8a" }}>Nenhum lançamento no período selecionado</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [products, setProducts] = useState([]);
@@ -569,6 +853,7 @@ export default function App() {
     { id: "dashboard", label: "Dashboard", icon: "⬛" },
     { id: "estoque", label: "Estoque", icon: "📦" },
     { id: "caixa", label: "Caixa", icon: "💰" },
+    { id: "relatorios", label: "Relatórios", icon: "📈" },
   ];
 
   const lowCount = products.filter(p => p.qty <= p.minQty).length;
@@ -619,6 +904,7 @@ export default function App() {
         {tab === "dashboard" && <Dashboard products={products} cash={cash} loading={loading} />}
         {tab === "estoque" && <Estoque products={products} setProducts={setProducts} setCash={setCash} loading={loading} />}
         {tab === "caixa" && <Caixa cash={cash} setCash={setCash} loading={loading} />}
+        {tab === "relatorios" && <Relatorios cash={cash} loading={loading} />}
       </main>
 
       <footer style={{ borderTop: "1px solid #2a2a40", padding: "14px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
