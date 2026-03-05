@@ -4,31 +4,52 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
-const DB_FILE = path.join(__dirname, "db.json");
 
-app.use(cors());
-app.use(express.json());
+// ─── Banco de dados persistente ───────────────────────────────────────────────
+// No Render, usa /tmp que sobrevive enquanto o servidor está vivo
+// Localmente usa db.json na raiz do projeto
+const IS_PROD = process.env.NODE_ENV === "production" || process.env.RENDER;
+const DB_FILE = IS_PROD ? "/tmp/db.json" : path.join(__dirname, "db.json");
 
-// ─── Lê o banco de dados ───────────────────────────────────────────────────
+const DB_INITIAL = {
+  products: [],
+  cash: []
+};
+
 function readDB() {
   try {
+    if (!fs.existsSync(DB_FILE)) {
+      // Tenta copiar o db.json do projeto como seed inicial
+      const seed = path.join(__dirname, "db.json");
+      if (fs.existsSync(seed)) {
+        fs.copyFileSync(seed, DB_FILE);
+      } else {
+        fs.writeFileSync(DB_FILE, JSON.stringify(DB_INITIAL, null, 2));
+      }
+    }
     return JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
   } catch {
-    return { products: [], cash: [] };
+    return DB_INITIAL;
   }
 }
 
 function writeDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("Erro ao salvar banco:", e);
+  }
 }
 
-// ─── Rotas: Products ──────────────────────────────────────────────────────
-app.get("/products", (req, res) => {
-  res.json(readDB().products);
-});
+app.use(cors());
+app.use(express.json());
+
+// ─── Products ──────────────────────────────────────────────────────────────────
+app.get("/products", (req, res) => res.json(readDB().products));
 
 app.post("/products", (req, res) => {
   const db = readDB();
@@ -51,16 +72,21 @@ app.delete("/products/:id", (req, res) => {
   res.status(204).end();
 });
 
-// ─── Rotas: Cash ──────────────────────────────────────────────────────────
-app.get("/cash", (req, res) => {
-  res.json(readDB().cash);
-});
+// ─── Cash ──────────────────────────────────────────────────────────────────────
+app.get("/cash", (req, res) => res.json(readDB().cash));
 
 app.post("/cash", (req, res) => {
   const db = readDB();
   db.cash.unshift(req.body);
   writeDB(db);
   res.status(201).json(req.body);
+});
+
+app.put("/cash/:id", (req, res) => {
+  const db = readDB();
+  db.cash = db.cash.map(c => c.id === req.params.id ? req.body : c);
+  writeDB(db);
+  res.json(req.body);
 });
 
 app.delete("/cash/:id", (req, res) => {
@@ -70,17 +96,13 @@ app.delete("/cash/:id", (req, res) => {
   res.status(204).end();
 });
 
-// ─── Serve o frontend (build do Vite) ─────────────────────────────────────
-app.use(express.static(path.join(__dirname, "dist")));
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
-});
+// ─── Frontend ──────────────────────────────────────────────────────────────────
+const distPath = path.join(__dirname, "dist");
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
+} else {
+  app.get("*", (req, res) => res.status(500).send("Build não encontrado."));
+}
 
-app.listen(PORT, () => console.log(`✅ StockFlow rodando na porta ${PORT}`));
-
-app.put("/cash/:id", (req, res) => {
-  const db = readDB();
-  db.cash = db.cash.map(c => c.id === req.params.id ? req.body : c);
-  writeDB(db);
-  res.json(req.body);
-});
+app.listen(PORT, () => console.log(`✅ StockFlow na porta ${PORT} | DB: ${DB_FILE}`));
