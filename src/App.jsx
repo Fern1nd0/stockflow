@@ -6,6 +6,68 @@ const fmtDate = (d) => new Date(d).toLocaleDateString("pt-BR", { day: "2-digit",
 const uid = () => Math.random().toString(36).slice(2, 10);
 const today = () => new Date().toISOString().slice(0, 10);
 
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+const SENHA = "439222";
+const AUTH_KEY = "sf_auth";
+
+function Login({ onLogin }) {
+  const [senha, setSenha] = useState("");
+  const [erro, setErro] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  const tentar = () => {
+    if (senha === SENHA) {
+      sessionStorage.setItem(AUTH_KEY, "1");
+      onLogin();
+    } else {
+      setErro(true);
+      setShake(true);
+      setSenha("");
+      setTimeout(() => setShake(false), 500);
+    }
+  };
+
+  const handleKey = (e) => { if (e.key === "Enter") tentar(); };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0a0a0f", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 380, animation: shake ? "shake .4s ease" : "fadeIn .3s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ width: 64, height: 64, background: "linear-gradient(135deg,#7c6af7,#f76a8a)", borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, margin: "0 auto 16px" }}>📊</div>
+          <h1 style={{ fontFamily: "var(--font-head)", fontSize: 28, fontWeight: 800, color: "#e8e8f0" }}>StockFlow</h1>
+          <p style={{ fontSize: 14, color: "#6b6b8a", marginTop: 6 }}>Gestão de Estoque & Caixa</p>
+        </div>
+        <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 20, padding: 32, boxShadow: "0 24px 64px rgba(0,0,0,.5)" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#6b6b8a", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 10 }}>Senha de acesso</p>
+          <input
+            type="password"
+            value={senha}
+            onChange={e => { setSenha(e.target.value); setErro(false); }}
+            onKeyDown={handleKey}
+            placeholder="••••••"
+            autoFocus
+            style={{ background: "#1a1a28", border: erro ? "1px solid #f87171" : "1px solid #2a2a40", color: "#e8e8f0", borderRadius: 10, padding: "12px 16px", fontSize: 20, outline: "none", width: "100%", fontFamily: "var(--font-mono)", letterSpacing: 6, marginBottom: 8, textAlign: "center" }}
+          />
+          {erro && <p style={{ fontSize: 12, color: "#f87171", marginBottom: 12, textAlign: "center" }}>Senha incorreta. Tente novamente.</p>}
+          <button onClick={tentar} style={{ width: "100%", background: "linear-gradient(135deg,#7c6af7,#f76a8a)", color: "#fff", border: "none", borderRadius: 10, padding: "13px", fontWeight: 700, fontSize: 15, cursor: "pointer", marginTop: 8, fontFamily: "var(--font-body)" }}>
+            Entrar
+          </button>
+        </div>
+      </div>
+      <style>{`
+        @keyframes shake {
+          0%,100%{transform:translateX(0)}
+          20%{transform:translateX(-10px)}
+          40%{transform:translateX(10px)}
+          60%{transform:translateX(-8px)}
+          80%{transform:translateX(8px)}
+        }
+      `}</style>
+    </div>
+  );
+}
+
+
 function KpiCard({ label, value, sub, accent, icon }) {
   return (
     <div style={{ background: "linear-gradient(135deg,#13131c,#1a1a28)", border: "1px solid #2a2a40", borderRadius: 16, padding: "20px 24px", display: "flex", flexDirection: "column", gap: 6, position: "relative", overflow: "hidden" }}>
@@ -816,6 +878,10 @@ function Relatorios({ cash, loading }) {
 }
 
 export default function App() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem(AUTH_KEY) === "1");
+
+  if (!authed) return <Login onLogin={() => setAuthed(true)} />;
+
   const [tab, setTab] = useState("dashboard");
   const [products, setProducts] = useState([]);
   const [cash, setCash] = useState([]);
@@ -884,7 +950,7 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Saldo + status */}
+        {/* Saldo + status + logout */}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: error ? "#f87171" : "#4ade80" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: error ? "#f87171" : "#4ade80", display: "inline-block" }} />
@@ -893,6 +959,7 @@ export default function App() {
             <p style={{ fontSize: 10, color: "#6b6b8a" }}>Saldo</p>
             <p style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: saldo >= 0 ? "#4ade80" : "#f87171" }}>{fmt(saldo)}</p>
           </div>
+          <button onClick={() => { sessionStorage.removeItem(AUTH_KEY); setAuthed(false); }} style={{ background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#6b6b8a", fontSize: 12, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font-body)", flexShrink: 0 }} title="Sair">🔒</button>
         </div>
       </header>
 
