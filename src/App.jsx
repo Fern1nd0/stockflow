@@ -861,55 +861,77 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0a0a0f", display: "flex", flexDirection: "column" }}>
-      <header style={{ background: "#13131c", borderBottom: "1px solid #2a2a40", padding: "0 28px", display: "flex", alignItems: "center", gap: 20, position: "sticky", top: 0, zIndex: 100, height: 62 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, background: "linear-gradient(135deg,#7c6af7,#f76a8a)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📊</div>
+
+      {/* ── HEADER DESKTOP ── */}
+      <header style={{ background: "#13131c", borderBottom: "1px solid #2a2a40", padding: "0 20px", display: "flex", alignItems: "center", gap: 16, position: "sticky", top: 0, zIndex: 100, height: 62 }}>
+        {/* Logo */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ width: 34, height: 34, background: "linear-gradient(135deg,#7c6af7,#f76a8a)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>📊</div>
           <div>
-            <h1 style={{ fontFamily: "var(--font-head)", fontSize: 17, fontWeight: 800, lineHeight: 1, color: "#e8e8f0" }}>StockFlow</h1>
-            <p style={{ fontSize: 11, color: "#6b6b8a", lineHeight: 1.4 }}>Gestão de Estoque & Caixa</p>
+            <h1 style={{ fontFamily: "var(--font-head)", fontSize: 16, fontWeight: 800, lineHeight: 1, color: "#e8e8f0" }}>StockFlow</h1>
+            <p style={{ fontSize: 10, color: "#6b6b8a", lineHeight: 1.4 }}>Estoque & Caixa</p>
           </div>
         </div>
 
-        <nav style={{ display: "flex", gap: 4, marginLeft: 28 }}>
+        {/* Nav — escondida no mobile, aparece como bottom bar */}
+        <nav style={{ display: "flex", gap: 3, marginLeft: 16, flex: 1 }}>
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? "rgba(124,106,247,.15)" : "transparent", color: tab === t.id ? "#7c6af7" : "#6b6b8a", border: tab === t.id ? "1px solid rgba(124,106,247,.3)" : "1px solid transparent", borderRadius: 9, padding: "7px 16px", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", position: "relative", fontFamily: "var(--font-body)" }}>
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? "rgba(124,106,247,.15)" : "transparent", color: tab === t.id ? "#7c6af7" : "#6b6b8a", border: tab === t.id ? "1px solid rgba(124,106,247,.3)" : "1px solid transparent", borderRadius: 9, padding: "7px 13px", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 5, cursor: "pointer", position: "relative", fontFamily: "var(--font-body)", whiteSpace: "nowrap" }}>
               {t.icon} {t.label}
               {t.id === "estoque" && lowCount > 0 && (
-                <span style={{ position: "absolute", top: -6, right: -6, background: "#f87171", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{lowCount}</span>
+                <span style={{ position: "absolute", top: -5, right: -5, background: "#f87171", color: "#fff", borderRadius: "50%", width: 16, height: 16, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{lowCount}</span>
               )}
             </button>
           ))}
         </nav>
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: error ? "#f87171" : "#4ade80" }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: error ? "#f87171" : "#4ade80", display: "inline-block" }} />
-            {error ? "Sem conexão" : "Sincronizado"}
+        {/* Saldo + status */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: error ? "#f87171" : "#4ade80" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: error ? "#f87171" : "#4ade80", display: "inline-block" }} />
+            <span style={{ display: "none" }}>{error ? "Erro" : "OK"}</span>
           </div>
           <div style={{ textAlign: "right" }}>
-            <p style={{ fontSize: 11, color: "#6b6b8a" }}>Saldo</p>
-            <p style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600, color: saldo >= 0 ? "#4ade80" : "#f87171" }}>{fmt(saldo)}</p>
+            <p style={{ fontSize: 10, color: "#6b6b8a" }}>Saldo</p>
+            <p style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: saldo >= 0 ? "#4ade80" : "#f87171" }}>{fmt(saldo)}</p>
           </div>
         </div>
       </header>
 
       {error && (
-        <div style={{ background: "rgba(248,113,113,.1)", borderBottom: "1px solid rgba(248,113,113,.3)", padding: "12px 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 13, color: "#f87171" }}>⚠️ Não foi possível conectar ao servidor.</span>
+        <div style={{ background: "rgba(248,113,113,.1)", borderBottom: "1px solid rgba(248,113,113,.3)", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontSize: 12, color: "#f87171" }}>⚠️ Sem conexão com o servidor.</span>
           <Btn sm onClick={loadData} color="#f87171">Tentar novamente</Btn>
         </div>
       )}
 
-      <main style={{ flex: 1, padding: "28px", maxWidth: 1200, width: "100%", margin: "0 auto", alignSelf: "stretch" }}>
+      {/* Conteúdo principal — padding menor no mobile */}
+      <main style={{ flex: 1, padding: "16px", maxWidth: 1200, width: "100%", margin: "0 auto", alignSelf: "stretch", boxSizing: "border-box" }}>
         {tab === "dashboard" && <Dashboard products={products} cash={cash} loading={loading} />}
         {tab === "estoque" && <Estoque products={products} setProducts={setProducts} setCash={setCash} loading={loading} />}
         {tab === "caixa" && <Caixa cash={cash} setCash={setCash} loading={loading} />}
         {tab === "relatorios" && <Relatorios cash={cash} loading={loading} />}
       </main>
 
-      <footer style={{ borderTop: "1px solid #2a2a40", padding: "14px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 12, color: "#6b6b8a" }}>StockFlow © 2025 — Controle de Estoque & Caixa</span>
-        <span style={{ fontSize: 12, color: "#6b6b8a", fontFamily: "var(--font-mono)" }}>{products.length} produtos · {cash.length} lançamentos</span>
+      {/* ── BOTTOM NAV MOBILE ── visível apenas em telas pequenas via meta viewport */}
+      <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#13131c", borderTop: "1px solid #2a2a40", display: "flex", zIndex: 200, paddingBottom: "env(safe-area-inset-bottom)" }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, padding: "10px 4px", background: "transparent", border: "none", cursor: "pointer", position: "relative", borderTop: tab === t.id ? "2px solid #7c6af7" : "2px solid transparent" }}>
+            <span style={{ fontSize: 20 }}>{t.icon}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, color: tab === t.id ? "#7c6af7" : "#6b6b8a", fontFamily: "var(--font-body)" }}>{t.label}</span>
+            {t.id === "estoque" && lowCount > 0 && (
+              <span style={{ position: "absolute", top: 6, right: "calc(50% - 18px)", background: "#f87171", color: "#fff", borderRadius: "50%", width: 15, height: 15, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{lowCount}</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* Espaço para o bottom nav não cobrir o conteúdo */}
+      <div style={{ height: 70 }} />
+
+      <footer style={{ borderTop: "1px solid #2a2a40", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: "#6b6b8a" }}>StockFlow © 2025</span>
+        <span style={{ fontSize: 11, color: "#6b6b8a", fontFamily: "var(--font-mono)" }}>{products.length} produtos · {cash.length} lançamentos</span>
       </footer>
     </div>
   );
