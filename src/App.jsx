@@ -877,11 +877,7 @@ function Relatorios({ cash, loading }) {
   );
 }
 
-export default function App() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem(AUTH_KEY) === "1");
-
-  if (!authed) return <Login onLogin={() => setAuthed(true)} />;
-
+function StockApp({ onLogout }) {
   const [tab, setTab] = useState("dashboard");
   const [products, setProducts] = useState([]);
   const [cash, setCash] = useState([]);
@@ -959,7 +955,7 @@ export default function App() {
             <p style={{ fontSize: 10, color: "#6b6b8a" }}>Saldo</p>
             <p style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 600, color: saldo >= 0 ? "#4ade80" : "#f87171" }}>{fmt(saldo)}</p>
           </div>
-          <button onClick={() => { sessionStorage.removeItem(AUTH_KEY); setAuthed(false); }} style={{ background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#6b6b8a", fontSize: 12, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font-body)", flexShrink: 0 }} title="Sair">🔒</button>
+          <button onClick={() => { sessionStorage.removeItem(AUTH_KEY); onLogout(); }} style={{ background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#6b6b8a", fontSize: 12, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font-body)", flexShrink: 0 }} title="Sair">🔒</button>
         </div>
       </header>
 
@@ -999,4 +995,10 @@ export default function App() {
       </footer>
     </div>
   );
+}
+
+export default function App() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem(AUTH_KEY) === "1");
+  if (!authed) return <Login onLogin={() => setAuthed(true)} />;
+  return <StockApp onLogout={() => setAuthed(false)} />;
 }
