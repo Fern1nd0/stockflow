@@ -1,102 +1,74 @@
 import express from "express";
 import cors from "cors";
-import fs from "fs";
+import { MongoClient, ObjectId } from "mongodb";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-// ─── Banco de dados persistente ───────────────────────────────────────────────
-// No Render, usa /tmp que sobrevive enquanto o servidor está vivo
-// Localmente usa db.json na raiz do projeto
-const IS_PROD = process.env.NODE_ENV === "production" || process.env.RENDER;
-const DB_FILE = IS_PROD ? "/tmp/db.json" : path.join(__dirname, "db.json");
-
-const DB_INITIAL = {
-  products: [],
-  cash: []
-};
-
-function readDB() {
-  try {
-    if (!fs.existsSync(DB_FILE)) {
-      // Tenta copiar o db.json do projeto como seed inicial
-      const seed = path.join(__dirname, "db.json");
-      if (fs.existsSync(seed)) {
-        fs.copyFileSync(seed, DB_FILE);
-      } else {
-        fs.writeFileSync(DB_FILE, JSON.stringify(DB_INITIAL, null, 2));
-      }
-    }
-    return JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-  } catch {
-    return DB_INITIAL;
-  }
-}
-
-function writeDB(data) {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.error("Erro ao salvar banco:", e);
-  }
-}
+const MONGO_URL = process.env.MONGO_URL;
 
 app.use(cors());
 app.use(express.json());
 
-// ─── Products ──────────────────────────────────────────────────────────────────
-app.get("/products", (req, res) => res.json(readDB().products));
+let db;
 
-app.post("/products", (req, res) => {
-  const db = readDB();
-  db.products.push(req.body);
-  writeDB(db);
+async function connectDB() {
+  const client = new MongoClient(MONGO_URL);
+  await client.connect();
+  db = client.db("stockflow");
+  console.log("✅ MongoDB conectado!");
+}
+
+// ─── Products ─────────────────────────────────────────────────────────────────
+app.get("/products", async (req, res) => {
+  const items = await db.collection("products").find().toArray();
+  res.json(items.map(({ _id, ...rest }) => rest));
+});
+
+app.post("/products", async (req, res) => {
+  await db.collection("products").insertOne(req.body);
   res.status(201).json(req.body);
 });
 
-app.put("/products/:id", (req, res) => {
-  const db = readDB();
-  db.products = db.products.map(p => p.id === req.params.id ? req.body : p);
-  writeDB(db);
+app.put("/products/:id", async (req, res) => {
+  const { _id, ...data } = req.body;
+  await db.collection("products").updateOne({ id: req.params.id }, { $set: data });
   res.json(req.body);
 });
 
-app.delete("/products/:id", (req, res) => {
-  const db = readDB();
-  db.products = db.products.filter(p => p.id !== req.params.id);
-  writeDB(db);
+app.delete("/products/:id", async (req, res) => {
+  await db.collection("products").deleteOne({ id: req.params.id });
   res.status(204).end();
 });
 
-// ─── Cash ──────────────────────────────────────────────────────────────────────
-app.get("/cash", (req, res) => res.json(readDB().cash));
+// ─── Cash ─────────────────────────────────────────────────────────────────────
+app.get("/cash", async (req, res) => {
+  const items = await db.collection("cash").find().sort({ date: -1 }).toArray();
+  res.json(items.map(({ _id, ...rest }) => rest));
+});
 
-app.post("/cash", (req, res) => {
-  const db = readDB();
-  db.cash.unshift(req.body);
-  writeDB(db);
+app.post("/cash", async (req, res) => {
+  await db.collection("cash").insertOne(req.body);
   res.status(201).json(req.body);
 });
 
-app.put("/cash/:id", (req, res) => {
-  const db = readDB();
-  db.cash = db.cash.map(c => c.id === req.params.id ? req.body : c);
-  writeDB(db);
+app.put("/cash/:id", async (req, res) => {
+  const { _id, ...data } = req.body;
+  await db.collection("cash").updateOne({ id: req.params.id }, { $set: data });
   res.json(req.body);
 });
 
-app.delete("/cash/:id", (req, res) => {
-  const db = readDB();
-  db.cash = db.cash.filter(c => c.id !== req.params.id);
-  writeDB(db);
+app.delete("/cash/:id", async (req, res) => {
+  await db.collection("cash").deleteOne({ id: req.params.id });
   res.status(204).end();
 });
 
-// ─── Frontend ──────────────────────────────────────────────────────────────────
+// ─── Frontend ─────────────────────────────────────────────────────────────────
 const distPath = path.join(__dirname, "dist");
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
@@ -105,4 +77,9 @@ if (fs.existsSync(distPath)) {
   app.get("*", (req, res) => res.status(500).send("Build não encontrado."));
 }
 
-app.listen(PORT, () => console.log(`✅ StockFlow na porta ${PORT} | DB: ${DB_FILE}`));
+connectDB().then(() => {
+  app.listen(PORT, () => console.log(`🚀 StockFlow na porta ${PORT}`));
+}).catch(err => {
+  console.error("Erro ao conectar MongoDB:", err);
+  process.exit(1);
+});
