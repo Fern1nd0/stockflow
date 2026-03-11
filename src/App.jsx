@@ -372,6 +372,15 @@ function Caixa({ cash, setCash, loading }) {
   }, {});
   const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
 
+  // Saldo acumulado por dia (sobre TODOS os lançamentos)
+  const allDays = [...new Set(cash.map(c => c.date))].sort();
+  const saldoAcumulado = {};
+  let runningBal = 0;
+  allDays.forEach(d => {
+    cash.filter(c => c.date === d).forEach(c => { runningBal += c.type === "entrada" ? c.value : -c.value; });
+    saldoAcumulado[d] = runningBal;
+  });
+
   const TAGS = [...new Set(cash.map(c => c.tag).filter(Boolean))];
   const inputStyle = { background: "#1a1a28", border: "1px solid #2a2a40", color: "#e8e8f0", borderRadius: 8, padding: "9px 13px", fontSize: 14, outline: "none", width: "100%", fontFamily: "var(--font-body)" };
   const fmtDayLabel = (d) => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
@@ -474,6 +483,14 @@ function Caixa({ cash, setCash, loading }) {
                     <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--font-mono)", color: daySaldo >= 0 ? "#4ade80" : "#f87171", background: daySaldo >= 0 ? "rgba(74,222,128,.1)" : "rgba(248,113,113,.1)", border: `1px solid ${daySaldo >= 0 ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`, borderRadius: 8, padding: "4px 10px" }}>
                       {daySaldo >= 0 ? "+" : ""}{fmt(daySaldo)}
                     </span>
+                    {saldoAcumulado[day] !== undefined && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", borderLeft: "1px solid #2a2a40", paddingLeft: 12 }}>
+                        <span style={{ fontSize: 10, color: "#6b6b8a", textTransform: "uppercase", letterSpacing: ".05em" }}>Saldo do dia</span>
+                        <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "var(--font-mono)", color: saldoAcumulado[day] >= 0 ? "#7c6af7" : "#f87171" }}>
+                          {fmt(saldoAcumulado[day])}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 {!isCollapsed && (
