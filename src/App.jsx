@@ -295,26 +295,44 @@ function Estoque({ products, setProducts, setCash, loading }) {
 
 function Caixa({ cash, setCash, loading }) {
   const [modal, setModal] = useState(false);
-  const [editId, setEditId] = useState(null); // null = novo, string = editando
+  const [editId, setEditId] = useState(null);
   const [filter, setFilter] = useState("todos");
+  const [filterPgto, setFilterPgto] = useState("todos");
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({ type: "entrada", desc: "", value: "", date: today(), tag: "" });
+  const [form, setForm] = useState({ type: "entrada", desc: "", value: "", date: today(), tag: "", pgto: "dinheiro" });
   const [saving, setSaving] = useState(false);
   const [collapsedDays, setCollapsedDays] = useState({});
 
-  const total = cash.reduce((s, c) => c.type === "entrada" ? s + c.value : s - c.value, 0);
+  // ── Totais gerais ──────────────────────────────────────────────────────────
   const entradas = cash.filter(c => c.type === "entrada").reduce((s, c) => s + c.value, 0);
-  const saidas = cash.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
+  const saidas   = cash.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
+  const total    = entradas - saidas;
+
+  // ── Saldo por origem ───────────────────────────────────────────────────────
+  // Entradas em dinheiro físico
+  const entDinheiro = cash.filter(c => c.type === "entrada" && c.pgto === "dinheiro").reduce((s, c) => s + c.value, 0);
+  // Entradas em conta (cartão + pix)
+  const entConta    = cash.filter(c => c.type === "entrada" && (c.pgto === "cartao" || c.pgto === "pix")).reduce((s, c) => s + c.value, 0);
+  // Saídas do caixa físico
+  const saiDinheiro = cash.filter(c => c.type === "saida" && (!c.pgto || c.pgto === "dinheiro")).reduce((s, c) => s + c.value, 0);
+  // Saídas da conta
+  const saiConta    = cash.filter(c => c.type === "saida" && (c.pgto === "cartao" || c.pgto === "pix")).reduce((s, c) => s + c.value, 0);
+
+  const saldoDinheiro = entDinheiro - saiDinheiro;
+  const saldoConta    = entConta - saiConta;
+
+  const PGTO_LABELS = { dinheiro: "💵 Dinheiro", cartao: "💳 Cartão", pix: "📱 Pix" };
+  const PGTO_COLORS = { dinheiro: "#fbbf24", cartao: "#7c6af7", pix: "#4ade80" };
 
   const openNew = () => {
     setEditId(null);
-    setForm({ type: "entrada", desc: "", value: "", date: today(), tag: "" });
+    setForm({ type: "entrada", desc: "", value: "", date: today(), tag: "", pgto: "dinheiro" });
     setModal(true);
   };
 
   const openEdit = (c) => {
     setEditId(c.id);
-    setForm({ type: c.type, desc: c.desc, value: String(c.value), date: c.date, tag: c.tag || "" });
+    setForm({ type: c.type, desc: c.desc, value: String(c.value), date: c.date, tag: c.tag || "", pgto: c.pgto || "dinheiro" });
     setModal(true);
   };
 
@@ -322,12 +340,10 @@ function Caixa({ cash, setCash, loading }) {
     if (!form.desc || !form.value) return;
     setSaving(true);
     if (editId) {
-      // Editar existente
       const updated = { ...cash.find(c => c.id === editId), ...form, value: +form.value };
       await api.updateCashEntry(updated);
       setCash(cs => cs.map(c => c.id === editId ? updated : c));
     } else {
-      // Novo lançamento
       const created = await api.addCashEntry({ ...form, id: uid(), value: +form.value });
       setCash(cs => [created, ...cs]);
     }
@@ -344,46 +360,57 @@ function Caixa({ cash, setCash, loading }) {
 
   const filtered = cash
     .filter(c => filter === "todos" || c.type === filter)
+    .filter(c => filterPgto === "todos" || (c.pgto || "dinheiro") === filterPgto)
     .filter(c => c.desc.toLowerCase().includes(search.toLowerCase()) || (c.tag || "").toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Agrupar por dia
   const grouped = filtered.reduce((acc, c) => {
-    const day = c.date;
-    if (!acc[day]) acc[day] = [];
-    acc[day].push(c);
+    if (!acc[c.date]) acc[c.date] = [];
+    acc[c.date].push(c);
     return acc;
   }, {});
   const days = Object.keys(grouped).sort((a, b) => new Date(b) - new Date(a));
 
-  // Saldo acumulado por dia (usando TODOS os lançamentos, não só filtrados)
-  // Calcula o saldo ao final de cada dia em ordem cronológica
-  const allDays = [...new Set(cash.map(c => c.date))].sort();
-  const saldoAcumulado = {};
-  let acc = 0;
-  allDays.forEach(d => {
-    const dayItems = cash.filter(c => c.date === d);
-    dayItems.forEach(c => { acc += c.type === "entrada" ? c.value : -c.value; });
-    saldoAcumulado[d] = acc;
-  });
-
   const TAGS = [...new Set(cash.map(c => c.tag).filter(Boolean))];
   const inputStyle = { background: "#1a1a28", border: "1px solid #2a2a40", color: "#e8e8f0", borderRadius: 8, padding: "9px 13px", fontSize: 14, outline: "none", width: "100%", fontFamily: "var(--font-body)" };
-
-  const fmtDayLabel = (dateStr) => {
-    const d = new Date(dateStr + "T12:00:00");
-    return d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
-  };
+  const fmtDayLabel = (d) => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 14 }}>
-        <KpiCard label="Saldo Atual" value={loading ? "…" : fmt(total)} icon="🏦" accent={total >= 0 ? "#4ade80" : "#f87171"} />
+
+      {/* ── KPIs principais ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14 }}>
+        <KpiCard label="Saldo Total" value={loading ? "…" : fmt(total)} icon="🏦" accent={total >= 0 ? "#4ade80" : "#f87171"} />
         <KpiCard label="Total Entradas" value={loading ? "…" : fmt(entradas)} icon="📥" accent="#4ade80" sub={`${cash.filter(c => c.type === "entrada").length} lançamentos`} />
         <KpiCard label="Total Saídas" value={loading ? "…" : fmt(saidas)} icon="📤" accent="#f87171" sub={`${cash.filter(c => c.type === "saida").length} lançamentos`} />
-        <KpiCard label="Resultado" value={loading ? "…" : (entradas > 0 ? ((entradas - saidas) / entradas * 100).toFixed(1) : "0.0") + "%"} icon="📊" accent="#7c6af7" sub="margem líquida" />
+        <KpiCard label="Margem" value={loading ? "…" : (entradas > 0 ? ((entradas - saidas) / entradas * 100).toFixed(1) : "0.0") + "%"} icon="📊" accent="#7c6af7" />
       </div>
 
+      {/* ── Saldo separado: Caixa físico vs Conta ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        {/* Caixa físico */}
+        <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 20, position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "#fbbf24", borderRadius: "16px 16px 0 0" }} />
+          <p style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>💵 Caixa Físico</p>
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: 24, fontWeight: 700, color: saldoDinheiro >= 0 ? "#fbbf24" : "#f87171" }}>{fmt(saldoDinheiro)}</p>
+          <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#6b6b8a" }}>
+            <span>Ent: <strong style={{ color: "#4ade80" }}>{fmt(entDinheiro)}</strong></span>
+            <span>Saí: <strong style={{ color: "#f87171" }}>{fmt(saiDinheiro)}</strong></span>
+          </div>
+        </div>
+        {/* Conta bancária */}
+        <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 20, position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "#7c6af7", borderRadius: "16px 16px 0 0" }} />
+          <p style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>💳 Conta Bancária (Cartão + Pix)</p>
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: 24, fontWeight: 700, color: saldoConta >= 0 ? "#7c6af7" : "#f87171" }}>{fmt(saldoConta)}</p>
+          <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#6b6b8a" }}>
+            <span>Ent: <strong style={{ color: "#4ade80" }}>{fmt(entConta)}</strong></span>
+            <span>Saí: <strong style={{ color: "#f87171" }}>{fmt(saiConta)}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Barra de progresso ── */}
       <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 14, padding: "16px 20px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13, color: "#6b6b8a" }}>
           <span>Entradas <strong style={{ color: "#4ade80" }}>{fmt(entradas)}</strong></span>
@@ -394,18 +421,24 @@ function Caixa({ cash, setCash, loading }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <input placeholder="🔍  Buscar lançamento..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, maxWidth: 260 }} />
+      {/* ── Filtros ── */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input placeholder="🔍  Buscar lançamento..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, maxWidth: 220 }} />
         {["todos", "entrada", "saida"].map(f => (
-          <button key={f} onClick={() => setFilter(f)} style={{ background: filter === f ? (f === "saida" ? "#f87171" : f === "entrada" ? "#4ade80" : "#7c6af7") : "#1a1a28", color: filter === f ? "#fff" : "#6b6b8a", border: "1px solid #2a2a40", borderRadius: 8, padding: "8px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "var(--font-body)" }}>
-            {f === "todos" ? "Todos" : f === "entrada" ? "📥 Entradas" : "📤 Saídas"}
+          <button key={f} onClick={() => setFilter(f)} style={{ background: filter === f ? (f === "saida" ? "#f87171" : f === "entrada" ? "#4ade80" : "#7c6af7") : "#1a1a28", color: filter === f ? "#fff" : "#6b6b8a", border: "1px solid #2a2a40", borderRadius: 8, padding: "8px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "var(--font-body)" }}>
+            {f === "todos" ? "Todos" : f === "entrada" ? "📥 Entrada" : "📤 Saída"}
+          </button>
+        ))}
+        {["todos", "dinheiro", "cartao", "pix"].map(p => (
+          <button key={p} onClick={() => setFilterPgto(p)} style={{ background: filterPgto === p ? (PGTO_COLORS[p] || "#7c6af7") : "#1a1a28", color: filterPgto === p ? "#0a0a0f" : "#6b6b8a", border: "1px solid #2a2a40", borderRadius: 8, padding: "8px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "var(--font-body)" }}>
+            {p === "todos" ? "Todas formas" : PGTO_LABELS[p]}
           </button>
         ))}
         <div style={{ flex: 1 }} />
         <Btn onClick={openNew} color="#7c6af7">＋ Novo Lançamento</Btn>
       </div>
 
-      {/* Lista agrupada por dia */}
+      {/* ── Lista agrupada por dia ── */}
       {loading ? (
         <div style={{ padding: 60, textAlign: "center", color: "#6b6b8a", background: "#13131c", borderRadius: 16, border: "1px solid #2a2a40" }}><Spinner /> Carregando...</div>
       ) : days.length === 0 ? (
@@ -414,58 +447,44 @@ function Caixa({ cash, setCash, loading }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {days.map(day => {
             const items = grouped[day];
-            const dayEntradas = items.filter(c => c.type === "entrada").reduce((s, c) => s + c.value, 0);
-            const daySaidas = items.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
-            const daySaldo = dayEntradas - daySaidas;
+            const dayEnt  = items.filter(c => c.type === "entrada").reduce((s, c) => s + c.value, 0);
+            const daySai  = items.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
+            const daySaldo = dayEnt - daySai;
             const isCollapsed = collapsedDays[day];
-
             return (
               <div key={day} style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, overflow: "hidden" }}>
-                {/* Header do dia — clicável para colapsar */}
                 <div onClick={() => toggleDay(day)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", cursor: "pointer", borderBottom: isCollapsed ? "none" : "1px solid #2a2a40", background: "#1a1a28" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ fontSize: 16 }}>{isCollapsed ? "▶" : "▼"}</span>
+                    <span style={{ fontSize: 14 }}>{isCollapsed ? "▶" : "▼"}</span>
                     <div>
                       <p style={{ fontWeight: 700, fontSize: 14, color: "#e8e8f0", textTransform: "capitalize" }}>{fmtDayLabel(day)}</p>
                       <p style={{ fontSize: 12, color: "#6b6b8a", marginTop: 2 }}>{items.length} lançamento{items.length !== 1 ? "s" : ""}</p>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <span style={{ fontSize: 13, color: "#4ade80", fontFamily: "var(--font-mono)" }}>+{fmt(dayEntradas)}</span>
-                    <span style={{ fontSize: 13, color: "#f87171", fontFamily: "var(--font-mono)" }}>-{fmt(daySaidas)}</span>
+                    <span style={{ fontSize: 13, color: "#4ade80", fontFamily: "var(--font-mono)" }}>+{fmt(dayEnt)}</span>
+                    <span style={{ fontSize: 13, color: "#f87171", fontFamily: "var(--font-mono)" }}>-{fmt(daySai)}</span>
                     <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--font-mono)", color: daySaldo >= 0 ? "#4ade80" : "#f87171", background: daySaldo >= 0 ? "rgba(74,222,128,.1)" : "rgba(248,113,113,.1)", border: `1px solid ${daySaldo >= 0 ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`, borderRadius: 8, padding: "4px 10px" }}>
                       {daySaldo >= 0 ? "+" : ""}{fmt(daySaldo)}
                     </span>
-                    {/* Saldo acumulado ao final do dia */}
-                    {saldoAcumulado[day] !== undefined && (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", borderLeft: "1px solid #2a2a40", paddingLeft: 12 }}>
-                        <span style={{ fontSize: 10, color: "#6b6b8a", textTransform: "uppercase", letterSpacing: ".05em" }}>Saldo do dia</span>
-                        <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "var(--font-mono)", color: saldoAcumulado[day] >= 0 ? "#7c6af7" : "#f87171" }}>
-                          {fmt(saldoAcumulado[day])}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </div>
-
-                {/* Lançamentos do dia */}
                 {!isCollapsed && (
                   <div>
                     {items.map((c, i) => (
-                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: i < items.length - 1 ? "1px solid #2a2a40" : "none", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,.015)" }}>
-                        {/* Tipo badge */}
-                        <span style={{ borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", ...(c.type === "entrada" ? { background: "rgba(74,222,128,.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,.25)" } : { background: "rgba(248,113,113,.12)", color: "#f87171", border: "1px solid rgba(248,113,113,.25)" }) }}>
-                          {c.type === "entrada" ? "📥 Entrada" : "📤 Saída"}
+                      <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 20px", borderBottom: i < items.length - 1 ? "1px solid #2a2a40" : "none", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,.015)", flexWrap: "wrap" }}>
+                        <span style={{ borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", ...(c.type === "entrada" ? { background: "rgba(74,222,128,.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,.25)" } : { background: "rgba(248,113,113,.12)", color: "#f87171", border: "1px solid rgba(248,113,113,.25)" }) }}>
+                          {c.type === "entrada" ? "📥" : "📤"}
                         </span>
-                        {/* Descrição */}
-                        <span style={{ flex: 1, fontWeight: 500, color: "#e8e8f0", fontSize: 14 }}>{c.desc}</span>
-                        {/* Tag */}
-                        {c.tag && <span style={{ background: "#1a1a28", border: "1px solid #2a2a40", borderRadius: 6, padding: "2px 8px", fontSize: 12, color: "#6b6b8a", whiteSpace: "nowrap" }}>{c.tag}</span>}
-                        {/* Valor */}
-                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, color: c.type === "entrada" ? "#4ade80" : "#f87171", whiteSpace: "nowrap" }}>
+                        {/* Badge forma de pagamento */}
+                        <span style={{ borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: `${PGTO_COLORS[c.pgto || "dinheiro"]}22`, color: PGTO_COLORS[c.pgto || "dinheiro"], border: `1px solid ${PGTO_COLORS[c.pgto || "dinheiro"]}44` }}>
+                          {PGTO_LABELS[c.pgto || "dinheiro"]}
+                        </span>
+                        <span style={{ flex: 1, fontWeight: 500, color: "#e8e8f0", fontSize: 14, minWidth: 80 }}>{c.desc}</span>
+                        {c.tag && <span style={{ background: "#1a1a28", border: "1px solid #2a2a40", borderRadius: 6, padding: "2px 7px", fontSize: 11, color: "#6b6b8a", whiteSpace: "nowrap" }}>{c.tag}</span>}
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 14, color: c.type === "entrada" ? "#4ade80" : "#f87171", whiteSpace: "nowrap" }}>
                           {c.type === "entrada" ? "+" : "-"}{fmt(c.value)}
                         </span>
-                        {/* Ações */}
                         <div style={{ display: "flex", gap: 6 }}>
                           <Btn sm outline onClick={() => openEdit(c)} color="#7c6af7">✏</Btn>
                           <Btn sm outline onClick={() => del(c.id)} color="#f87171">✕</Btn>
@@ -480,6 +499,7 @@ function Caixa({ cash, setCash, loading }) {
         </div>
       )}
 
+      {/* ── Modal novo/editar ── */}
       {modal && (
         <Modal title={editId ? "Editar Lançamento" : "Novo Lançamento"} onClose={() => setModal(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -492,13 +512,22 @@ function Caixa({ cash, setCash, loading }) {
                 ))}
               </div>
             </Field>
-            <Field label="Descrição"><input value={form.desc} onChange={e => setForm(f => ({ ...f, desc: e.target.value }))} placeholder="Ex: Venda de produtos" style={inputStyle} /></Field>
+            <Field label="Forma de Pagamento">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                {["dinheiro", "cartao", "pix"].map(p => (
+                  <button key={p} onClick={() => setForm(f => ({ ...f, pgto: p }))} style={{ padding: "10px 6px", borderRadius: 10, fontWeight: 600, fontSize: 13, border: `2px solid ${form.pgto === p ? PGTO_COLORS[p] : "#2a2a40"}`, background: form.pgto === p ? `${PGTO_COLORS[p]}18` : "#1a1a28", color: form.pgto === p ? PGTO_COLORS[p] : "#6b6b8a", cursor: "pointer", fontFamily: "var(--font-body)", textAlign: "center" }}>
+                    {PGTO_LABELS[p]}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="Descrição"><input value={form.desc} onChange={e => setForm(f => ({ ...f, desc: e.target.value }))} placeholder="Ex: Venda hambúrguer" style={inputStyle} /></Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <Field label="Valor (R$)"><input type="number" value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="0,00" style={inputStyle} /></Field>
               <Field label="Data"><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} /></Field>
             </div>
             <Field label="Tag / Categoria">
-              <input list="tags" value={form.tag} onChange={e => setForm(f => ({ ...f, tag: e.target.value }))} placeholder="Ex: Vendas, Fixo, Estoque..." style={inputStyle} />
+              <input list="tags" value={form.tag} onChange={e => setForm(f => ({ ...f, tag: e.target.value }))} placeholder="Ex: Vendas, Fixo..." style={inputStyle} />
               <datalist id="tags">{TAGS.map(t => <option key={t} value={t} />)}</datalist>
             </Field>
           </div>
@@ -511,6 +540,7 @@ function Caixa({ cash, setCash, loading }) {
     </div>
   );
 }
+
 
 function Dashboard({ products, cash, loading }) {
   const total = cash.reduce((s, c) => c.type === "entrada" ? s + c.value : s - c.value, 0);
