@@ -294,6 +294,8 @@ function Estoque({ products, setProducts, setCash, loading }) {
 }
 
 function Caixa({ cash, setCash, loading }) {
+  const CUTOFF = "2026-03-11"; // A partir desta data, registrar forma de pagamento
+
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [filter, setFilter] = useState("todos");
@@ -308,18 +310,15 @@ function Caixa({ cash, setCash, loading }) {
   const saidas   = cash.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
   const total    = entradas - saidas;
 
-  // ── Saldo por origem ───────────────────────────────────────────────────────
-  // Entradas em dinheiro físico
-  const entDinheiro = cash.filter(c => c.type === "entrada" && c.pgto === "dinheiro").reduce((s, c) => s + c.value, 0);
-  // Entradas em conta (cartão + pix)
-  const entConta    = cash.filter(c => c.type === "entrada" && (c.pgto === "cartao" || c.pgto === "pix")).reduce((s, c) => s + c.value, 0);
-  // Saídas do caixa físico
-  const saiDinheiro = cash.filter(c => c.type === "saida" && (!c.pgto || c.pgto === "dinheiro")).reduce((s, c) => s + c.value, 0);
-  // Saídas da conta
-  const saiConta    = cash.filter(c => c.type === "saida" && (c.pgto === "cartao" || c.pgto === "pix")).reduce((s, c) => s + c.value, 0);
-
+  // ── Saldo separado — apenas lançamentos a partir do CUTOFF ─────────────────
+  const novos = cash.filter(c => c.date >= CUTOFF);
+  const entDinheiro = novos.filter(c => c.type === "entrada" && c.pgto === "dinheiro").reduce((s, c) => s + c.value, 0);
+  const entConta    = novos.filter(c => c.type === "entrada" && (c.pgto === "cartao" || c.pgto === "pix")).reduce((s, c) => s + c.value, 0);
+  const saiDinheiro = novos.filter(c => c.type === "saida"   && (!c.pgto || c.pgto === "dinheiro")).reduce((s, c) => s + c.value, 0);
+  const saiConta    = novos.filter(c => c.type === "saida"   && (c.pgto === "cartao" || c.pgto === "pix")).reduce((s, c) => s + c.value, 0);
   const saldoDinheiro = entDinheiro - saiDinheiro;
-  const saldoConta    = entConta - saiConta;
+  const saldoConta    = entConta    - saiConta;
+  const temNovos = novos.length > 0;
 
   const PGTO_LABELS = { dinheiro: "💵 Dinheiro", cartao: "💳 Cartão", pix: "📱 Pix" };
   const PGTO_COLORS = { dinheiro: "#fbbf24", cartao: "#7c6af7", pix: "#4ade80" };
@@ -339,12 +338,14 @@ function Caixa({ cash, setCash, loading }) {
   const save = async () => {
     if (!form.desc || !form.value) return;
     setSaving(true);
+    const isNew = form.date >= CUTOFF;
+    const entry = { ...form, value: +form.value, pgto: isNew ? form.pgto : undefined };
     if (editId) {
-      const updated = { ...cash.find(c => c.id === editId), ...form, value: +form.value };
+      const updated = { ...cash.find(c => c.id === editId), ...entry };
       await api.updateCashEntry(updated);
       setCash(cs => cs.map(c => c.id === editId ? updated : c));
     } else {
-      const created = await api.addCashEntry({ ...form, id: uid(), value: +form.value });
+      const created = await api.addCashEntry({ ...entry, id: uid() });
       setCash(cs => [created, ...cs]);
     }
     setSaving(false);
@@ -360,7 +361,7 @@ function Caixa({ cash, setCash, loading }) {
 
   const filtered = cash
     .filter(c => filter === "todos" || c.type === filter)
-    .filter(c => filterPgto === "todos" || (c.pgto || "dinheiro") === filterPgto)
+    .filter(c => filterPgto === "todos" || (c.pgto || "") === filterPgto)
     .filter(c => c.desc.toLowerCase().includes(search.toLowerCase()) || (c.tag || "").toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -378,7 +379,7 @@ function Caixa({ cash, setCash, loading }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-      {/* ── KPIs principais ── */}
+      {/* ── KPIs totais (todos os lançamentos) ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14 }}>
         <KpiCard label="Saldo Total" value={loading ? "…" : fmt(total)} icon="🏦" accent={total >= 0 ? "#4ade80" : "#f87171"} />
         <KpiCard label="Total Entradas" value={loading ? "…" : fmt(entradas)} icon="📥" accent="#4ade80" sub={`${cash.filter(c => c.type === "entrada").length} lançamentos`} />
@@ -386,31 +387,36 @@ function Caixa({ cash, setCash, loading }) {
         <KpiCard label="Margem" value={loading ? "…" : (entradas > 0 ? ((entradas - saidas) / entradas * 100).toFixed(1) : "0.0") + "%"} icon="📊" accent="#7c6af7" />
       </div>
 
-      {/* ── Saldo separado: Caixa físico vs Conta ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        {/* Caixa físico */}
-        <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 20, position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "#fbbf24", borderRadius: "16px 16px 0 0" }} />
-          <p style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>💵 Caixa Físico</p>
-          <p style={{ fontFamily: "var(--font-mono)", fontSize: 24, fontWeight: 700, color: saldoDinheiro >= 0 ? "#fbbf24" : "#f87171" }}>{fmt(saldoDinheiro)}</p>
-          <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#6b6b8a" }}>
-            <span>Ent: <strong style={{ color: "#4ade80" }}>{fmt(entDinheiro)}</strong></span>
-            <span>Saí: <strong style={{ color: "#f87171" }}>{fmt(saiDinheiro)}</strong></span>
+      {/* ── Saldo separado — só aparece quando há lançamentos novos ── */}
+      {temNovos && (
+        <div>
+          <p style={{ fontSize: 11, color: "#6b6b8a", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 10 }}>
+            Breakdown por forma de pagamento — a partir de 11/03/2026
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 20, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "#fbbf24", borderRadius: "16px 16px 0 0" }} />
+              <p style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>💵 Caixa Físico</p>
+              <p style={{ fontFamily: "var(--font-mono)", fontSize: 24, fontWeight: 700, color: saldoDinheiro >= 0 ? "#fbbf24" : "#f87171" }}>{fmt(saldoDinheiro)}</p>
+              <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#6b6b8a" }}>
+                <span>Ent: <strong style={{ color: "#4ade80" }}>{fmt(entDinheiro)}</strong></span>
+                <span>Saí: <strong style={{ color: "#f87171" }}>{fmt(saiDinheiro)}</strong></span>
+              </div>
+            </div>
+            <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 20, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "#7c6af7", borderRadius: "16px 16px 0 0" }} />
+              <p style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>💳 Conta Bancária (Cartão + Pix)</p>
+              <p style={{ fontFamily: "var(--font-mono)", fontSize: 24, fontWeight: 700, color: saldoConta >= 0 ? "#7c6af7" : "#f87171" }}>{fmt(saldoConta)}</p>
+              <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#6b6b8a" }}>
+                <span>Ent: <strong style={{ color: "#4ade80" }}>{fmt(entConta)}</strong></span>
+                <span>Saí: <strong style={{ color: "#f87171" }}>{fmt(saiConta)}</strong></span>
+              </div>
+            </div>
           </div>
         </div>
-        {/* Conta bancária */}
-        <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, padding: 20, position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "#7c6af7", borderRadius: "16px 16px 0 0" }} />
-          <p style={{ fontSize: 12, color: "#6b6b8a", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>💳 Conta Bancária (Cartão + Pix)</p>
-          <p style={{ fontFamily: "var(--font-mono)", fontSize: 24, fontWeight: 700, color: saldoConta >= 0 ? "#7c6af7" : "#f87171" }}>{fmt(saldoConta)}</p>
-          <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 12, color: "#6b6b8a" }}>
-            <span>Ent: <strong style={{ color: "#4ade80" }}>{fmt(entConta)}</strong></span>
-            <span>Saí: <strong style={{ color: "#f87171" }}>{fmt(saiConta)}</strong></span>
-          </div>
-        </div>
-      </div>
+      )}
 
-      {/* ── Barra de progresso ── */}
+      {/* ── Barra progresso ── */}
       <div style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 14, padding: "16px 20px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 13, color: "#6b6b8a" }}>
           <span>Entradas <strong style={{ color: "#4ade80" }}>{fmt(entradas)}</strong></span>
@@ -429,9 +435,9 @@ function Caixa({ cash, setCash, loading }) {
             {f === "todos" ? "Todos" : f === "entrada" ? "📥 Entrada" : "📤 Saída"}
           </button>
         ))}
-        {["todos", "dinheiro", "cartao", "pix"].map(p => (
-          <button key={p} onClick={() => setFilterPgto(p)} style={{ background: filterPgto === p ? (PGTO_COLORS[p] || "#7c6af7") : "#1a1a28", color: filterPgto === p ? "#0a0a0f" : "#6b6b8a", border: "1px solid #2a2a40", borderRadius: 8, padding: "8px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "var(--font-body)" }}>
-            {p === "todos" ? "Todas formas" : PGTO_LABELS[p]}
+        {["dinheiro", "cartao", "pix"].map(p => (
+          <button key={p} onClick={() => setFilterPgto(filterPgto === p ? "todos" : p)} style={{ background: filterPgto === p ? PGTO_COLORS[p] : "#1a1a28", color: filterPgto === p ? "#0a0a0f" : "#6b6b8a", border: "1px solid #2a2a40", borderRadius: 8, padding: "8px 14px", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "var(--font-body)" }}>
+            {PGTO_LABELS[p]}
           </button>
         ))}
         <div style={{ flex: 1 }} />
@@ -447,9 +453,10 @@ function Caixa({ cash, setCash, loading }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {days.map(day => {
             const items = grouped[day];
-            const dayEnt  = items.filter(c => c.type === "entrada").reduce((s, c) => s + c.value, 0);
-            const daySai  = items.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
+            const dayEnt   = items.filter(c => c.type === "entrada").reduce((s, c) => s + c.value, 0);
+            const daySai   = items.filter(c => c.type === "saida").reduce((s, c) => s + c.value, 0);
             const daySaldo = dayEnt - daySai;
+            const isNew    = day >= CUTOFF;
             const isCollapsed = collapsedDays[day];
             return (
               <div key={day} style={{ background: "#13131c", border: "1px solid #2a2a40", borderRadius: 16, overflow: "hidden" }}>
@@ -461,7 +468,7 @@ function Caixa({ cash, setCash, loading }) {
                       <p style={{ fontSize: 12, color: "#6b6b8a", marginTop: 2 }}>{items.length} lançamento{items.length !== 1 ? "s" : ""}</p>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                     <span style={{ fontSize: 13, color: "#4ade80", fontFamily: "var(--font-mono)" }}>+{fmt(dayEnt)}</span>
                     <span style={{ fontSize: 13, color: "#f87171", fontFamily: "var(--font-mono)" }}>-{fmt(daySai)}</span>
                     <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "var(--font-mono)", color: daySaldo >= 0 ? "#4ade80" : "#f87171", background: daySaldo >= 0 ? "rgba(74,222,128,.1)" : "rgba(248,113,113,.1)", border: `1px solid ${daySaldo >= 0 ? "rgba(74,222,128,.25)" : "rgba(248,113,113,.25)"}`, borderRadius: 8, padding: "4px 10px" }}>
@@ -476,10 +483,12 @@ function Caixa({ cash, setCash, loading }) {
                         <span style={{ borderRadius: 6, padding: "3px 8px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", ...(c.type === "entrada" ? { background: "rgba(74,222,128,.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,.25)" } : { background: "rgba(248,113,113,.12)", color: "#f87171", border: "1px solid rgba(248,113,113,.25)" }) }}>
                           {c.type === "entrada" ? "📥" : "📤"}
                         </span>
-                        {/* Badge forma de pagamento */}
-                        <span style={{ borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: `${PGTO_COLORS[c.pgto || "dinheiro"]}22`, color: PGTO_COLORS[c.pgto || "dinheiro"], border: `1px solid ${PGTO_COLORS[c.pgto || "dinheiro"]}44` }}>
-                          {PGTO_LABELS[c.pgto || "dinheiro"]}
-                        </span>
+                        {/* Badge forma de pagamento — só nos novos */}
+                        {isNew && c.pgto && (
+                          <span style={{ borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: `${PGTO_COLORS[c.pgto]}22`, color: PGTO_COLORS[c.pgto], border: `1px solid ${PGTO_COLORS[c.pgto]}55` }}>
+                            {PGTO_LABELS[c.pgto]}
+                          </span>
+                        )}
                         <span style={{ flex: 1, fontWeight: 500, color: "#e8e8f0", fontSize: 14, minWidth: 80 }}>{c.desc}</span>
                         {c.tag && <span style={{ background: "#1a1a28", border: "1px solid #2a2a40", borderRadius: 6, padding: "2px 7px", fontSize: 11, color: "#6b6b8a", whiteSpace: "nowrap" }}>{c.tag}</span>}
                         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 14, color: c.type === "entrada" ? "#4ade80" : "#f87171", whiteSpace: "nowrap" }}>
@@ -499,7 +508,7 @@ function Caixa({ cash, setCash, loading }) {
         </div>
       )}
 
-      {/* ── Modal novo/editar ── */}
+      {/* ── Modal ── */}
       {modal && (
         <Modal title={editId ? "Editar Lançamento" : "Novo Lançamento"} onClose={() => setModal(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -512,15 +521,18 @@ function Caixa({ cash, setCash, loading }) {
                 ))}
               </div>
             </Field>
-            <Field label="Forma de Pagamento">
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                {["dinheiro", "cartao", "pix"].map(p => (
-                  <button key={p} onClick={() => setForm(f => ({ ...f, pgto: p }))} style={{ padding: "10px 6px", borderRadius: 10, fontWeight: 600, fontSize: 13, border: `2px solid ${form.pgto === p ? PGTO_COLORS[p] : "#2a2a40"}`, background: form.pgto === p ? `${PGTO_COLORS[p]}18` : "#1a1a28", color: form.pgto === p ? PGTO_COLORS[p] : "#6b6b8a", cursor: "pointer", fontFamily: "var(--font-body)", textAlign: "center" }}>
-                    {PGTO_LABELS[p]}
-                  </button>
-                ))}
-              </div>
-            </Field>
+            {/* Forma de pagamento — só aparece se a data for >= CUTOFF */}
+            {form.date >= CUTOFF && (
+              <Field label="Forma de Pagamento">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  {["dinheiro", "cartao", "pix"].map(p => (
+                    <button key={p} onClick={() => setForm(f => ({ ...f, pgto: p }))} style={{ padding: "10px 6px", borderRadius: 10, fontWeight: 600, fontSize: 13, border: `2px solid ${form.pgto === p ? PGTO_COLORS[p] : "#2a2a40"}`, background: form.pgto === p ? `${PGTO_COLORS[p]}18` : "#1a1a28", color: form.pgto === p ? PGTO_COLORS[p] : "#6b6b8a", cursor: "pointer", fontFamily: "var(--font-body)", textAlign: "center" }}>
+                      {PGTO_LABELS[p]}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            )}
             <Field label="Descrição"><input value={form.desc} onChange={e => setForm(f => ({ ...f, desc: e.target.value }))} placeholder="Ex: Venda hambúrguer" style={inputStyle} /></Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <Field label="Valor (R$)"><input type="number" value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} placeholder="0,00" style={inputStyle} /></Field>
